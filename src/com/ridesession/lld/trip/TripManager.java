@@ -6,6 +6,8 @@ import com.ridesession.lld.rider.Rider;
 import com.ridesession.lld.rider.RiderManager;
 import com.ridesession.lld.location.Location;
 import com.ridesession.lld.strategy.StrategyManager;
+import com.ridesession.lld.pricing.PricingStrategy;
+import com.ridesession.lld.strategy.DriverMatchingStrategy;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,30 +45,39 @@ public class TripManager {
 
         StrategyManager strategyManager = StrategyManager.getInstance();
 
-        Driver driver = strategyManager.getDriverMatchingStrategy()
-                .findDriver(rider, driverManager.getDriversMap().values().stream().toList());
+        // -------- 1. Build metadata (needed for strategy selection) --------
+        TripMetaData metaData = new TripMetaData(srcLoc, dstLoc, rider.getRating());
 
-        double price = strategyManager.getPricingStrategy().calculatePrice(
-                new TripMetaData(srcLoc, dstLoc, rider.getRating())
-        );
+        // -------- 2. Select correct pricing + matching strategies --------
+        PricingStrategy pricingStrategy =
+                strategyManager.determinePricingStrategy(metaData);
 
+        DriverMatchingStrategy matchingStrategy =
+                strategyManager.determineMatchingStrategy(metaData);
+
+        // -------- 3. Select driver --------
+        Driver driver = matchingStrategy.matchDriver(metaData);
+
+        // -------- 4. Calculate price --------
+        double price = pricingStrategy.calculatePrice(metaData);
+
+        // -------- 5. Create Trip object --------
         Trip trip = new Trip(
                 rider,
                 driver,
                 srcLoc,
                 dstLoc,
                 price,
-                strategyManager.getPricingStrategy(),
-                strategyManager.getDriverMatchingStrategy()
+                pricingStrategy,
+                matchingStrategy
         );
 
+        // -------- 6. Store trip + metadata --------
         tripsInfo.put(trip.getTripId(), trip);
+        metaData.setDriverRating(driver.getRating());
+        tripsMetaDataInfo.put(trip.getTripId(), metaData);
 
-        TripMetaData meta = new TripMetaData(srcLoc, dstLoc, rider.getRating());
-        meta.setDriverRating(driver.getRating());
-
-        tripsMetaDataInfo.put(trip.getTripId(), meta);
-
+        // -------- 7. Display details --------
         trip.displayTripDetails();
     }
 
